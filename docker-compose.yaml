@@ -9,17 +9,40 @@ services:
       POSTGRES_USER: administrator
       POSTGRES_DB: todo
 
-  app:
+  app: # Run the FastAPI app (server) inside a new container
     build:
       context: .
       dockerfile: Dockerfile.dev
     restart: always
     volumes:
       - ./todo:/app/todo
+      - ./credentials:/root/.aws/credentials
+    env_file: "aws.env"
     environment:
       SQLALCHEMY_DATABASE_URI: postgresql://administrator:verySecretPassword@database:5432/todo
+      CELERY_BROKER_URL: sqs://
+      CELERY_RESULT_BACKEND: db+postgresql://administrator:verySecretPassword@database:5432/todo
     ports:
       - "6400:6400"
     depends_on:
       - database
+  
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
 
+  worker: # Run Celery inside a new container
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    restart: always
+    volumes:
+      - ./todo:/app/todo
+      - ./credentials:/root/.aws/credentials
+    env_file: "aws.env"
+    environment:
+      CELERY_BROKER_URL: sqs://
+      CELERY_RESULT_BACKEND: db+postgresql://administrator:verySecretPassword@database:5432/todo
+    command: poetry run celery --app todo.tasks.ical worker --loglevel=info
